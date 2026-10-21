@@ -1,0 +1,21 @@
+{
+  "name": "rapid-write-evaluator",
+  "version": "1.0.0",
+  "description": "RAPID WRITE - Stylus Handwriting Evaluator 24/7 Web App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "deploy:cloudflare": "npx wrangler pages deploy build/web --project-name rapid-write"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "handwriting",
+    "flutter",
+    "ocr",
+    "evaluator"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "outputDirectory": "build/web",
+  "rewrites": [
+    { "source": "/api/handwriting", "destination": "/api/handwriting.js" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
