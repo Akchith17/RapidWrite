@@ -14,6 +14,7 @@ migrate_working_dir/
 node_modules/
 cloudflared.exe
 *.exe
+*.zip
 
 # IntelliJ related
 *.iml
