@@ -63,14 +63,20 @@ Written: "${result.recognizedText}"
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isDesktop = size.width > 800;
+
     return Container(
       width: double.infinity,
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.78,
+        maxHeight: isDesktop ? size.height * 0.88 : size.height * 0.80,
+        maxWidth: 720,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: isDesktop
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
         border: Border.all(color: orangeBorder, width: 1.5),
         boxShadow: [
           BoxShadow(

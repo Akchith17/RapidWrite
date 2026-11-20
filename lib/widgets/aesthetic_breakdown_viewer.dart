@@ -32,12 +32,33 @@ class AestheticBreakdownViewer extends StatefulWidget {
   });
 
   static Future<void> show(BuildContext context, EvaluationResult result) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => AestheticBreakdownViewer(result: result),
-    );
+    final width = MediaQuery.of(context).size.width;
+    if (width > 800) {
+      // Desktop / Laptop: Show centered modal dialog
+      return showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960, maxHeight: 880),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: AestheticBreakdownViewer(result: result),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Mobile / Tablet: Full-height bottom sheet
+      return showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => AestheticBreakdownViewer(result: result),
+      );
+    }
   }
 
   // Consistent Warm Solar Theme
@@ -62,21 +83,20 @@ class _AestheticBreakdownViewerState extends State<AestheticBreakdownViewer> {
     final breakdown = widget.result.aestheticBreakdown;
     final strokes = widget.result.strokes ?? [];
     final size = MediaQuery.of(context).size;
+    final isDesktop = size.width > 800;
 
     return Container(
+      width: double.infinity,
       constraints: BoxConstraints(
-        maxHeight: size.height * 0.92,
+        maxHeight: isDesktop ? size.height * 0.90 : size.height * 0.94,
         maxWidth: 960,
       ),
-      margin: EdgeInsets.only(
-        top: 24,
-        left: size.width > 980 ? (size.width - 960) / 2 : 0,
-        right: size.width > 980 ? (size.width - 960) / 2 : 0,
-      ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
+        borderRadius: isDesktop
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: const [
           BoxShadow(
             color: Colors.black26,
             blurRadius: 32,

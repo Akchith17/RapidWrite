@@ -13,12 +13,33 @@ class AlgorithmInspectionModal extends StatelessWidget {
   });
 
   static Future<void> show(BuildContext context, AestheticEvaluation aesthetic) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => AlgorithmInspectionModal(aesthetic: aesthetic),
-    );
+    final width = MediaQuery.of(context).size.width;
+    if (width > 800) {
+      // Desktop / Laptop: Show centered modal dialog
+      return showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 820, maxHeight: 860),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: AlgorithmInspectionModal(aesthetic: aesthetic),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Mobile / Tablet: Bottom sheet
+      return showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => AlgorithmInspectionModal(aesthetic: aesthetic),
+      );
+    }
   }
 
   // Brand Palette matching ResultsDashboard
@@ -33,21 +54,20 @@ class AlgorithmInspectionModal extends StatelessWidget {
   Widget build(BuildContext context) {
     final data = aesthetic.inspectionData;
     final size = MediaQuery.of(context).size;
+    final isDesktop = size.width > 800;
 
     return Container(
+      width: double.infinity,
       constraints: BoxConstraints(
-        maxHeight: size.height * 0.88,
-        maxWidth: 780,
+        maxHeight: isDesktop ? size.height * 0.88 : size.height * 0.92,
+        maxWidth: 820,
       ),
-      margin: EdgeInsets.only(
-        top: 30,
-        left: size.width > 800 ? (size.width - 780) / 2 : 0,
-        right: size.width > 800 ? (size.width - 780) / 2 : 0,
-      ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
+        borderRadius: isDesktop
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: const [
           BoxShadow(
             color: Colors.black26,
             blurRadius: 28,

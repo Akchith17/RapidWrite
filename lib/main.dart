@@ -377,19 +377,45 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   }
 
   void _showResultsDashboard(EvaluationResult result) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => ResultsDashboard(
-        result: result,
-        onDismiss: () => Navigator.pop(ctx),
-        onRetry: () {
-          Navigator.pop(ctx);
-          _clearCanvas();
-        },
-      ),
-    );
+    final width = MediaQuery.of(context).size.width;
+    if (width > 800) {
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 860),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: ResultsDashboard(
+                result: result,
+                onDismiss: () => Navigator.pop(ctx),
+                onRetry: () {
+                  Navigator.pop(ctx);
+                  _clearCanvas();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => ResultsDashboard(
+          result: result,
+          onDismiss: () => Navigator.pop(ctx),
+          onRetry: () {
+            Navigator.pop(ctx);
+            _clearCanvas();
+          },
+        ),
+      );
+    }
   }
 
   void _showSettingsDialog() {
