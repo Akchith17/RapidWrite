@@ -1,5 +1,7 @@
+import 'aesthetic_breakdown_model.dart';
 import 'aesthetic_evaluation.dart';
 import 'handwriting_metrics.dart';
+import 'handwriting_stroke.dart';
 
 /// Complete evaluation result returned after submitting a handwritten sample.
 /// Encapsulates:
@@ -17,6 +19,9 @@ class EvaluationResult {
   final String? screenshotPath;
   final DateTime timestamp;
   final String ocrEngine;
+  final List<HandwritingStroke>? strokes;
+
+  AestheticBreakdown? get aestheticBreakdown => aesthetic.breakdown;
 
   // Raw / Gross Speed Metrics (pure physical writing speed, regardless of what they wrote)
   final double grossWpm;
@@ -30,6 +35,10 @@ class EvaluationResult {
   final int correctCharacterCount;
   final int errorCount;
 
+  // Adaptive Target Benchmarks (for pacing & speed comparison)
+  final int? targetWpm;
+  final double? recommendedDurationSec;
+
   EvaluationResult({
     required this.targetSentence,
     required this.recognizedText,
@@ -39,6 +48,7 @@ class EvaluationResult {
     required this.aesthetic,
     this.screenshotPath,
     required this.timestamp,
+    this.strokes,
     String? ocrEngine,
     double? grossWpm,
     double? grossCpm,
@@ -48,6 +58,8 @@ class EvaluationResult {
     double? speedPenaltyWpm,
     int? correctCharacterCount,
     int? errorCount,
+    this.targetWpm,
+    this.recommendedDurationSec,
   })  : ocrEngine = ocrEngine ?? 'Google Digital Ink',
         grossCpm = grossCpm ?? _computeGrossCpm(recognizedText, targetSentence, metrics),
         grossWpm = grossWpm ?? (_computeGrossCpm(recognizedText, targetSentence, metrics) / 5.0),
@@ -100,5 +112,7 @@ class EvaluationResult {
         'aesthetic': aesthetic.toJson(),
         'screenshotPath': screenshotPath,
         'timestamp': timestamp.toIso8601String(),
+        'targetWpm': targetWpm,
+        'recommendedDurationSec': recommendedDurationSec,
       };
 }

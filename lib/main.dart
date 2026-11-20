@@ -8,13 +8,18 @@ import 'package:screenshot/screenshot.dart';
 
 import 'models/evaluation_result.dart';
 import 'models/handwriting_stroke.dart';
+import 'models/practice_settings.dart';
+import 'models/target_sentence_model.dart';
 import 'services/digital_ink_service.dart';
+import 'services/aesthetic_evaluator_service.dart';
+import 'services/profile_storage_service.dart';
+import 'services/sentence_engine_service.dart';
 import 'services/speed_calculator_service.dart';
-import 'services/vision_ai_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/canvas_background_painter.dart';
 import 'widgets/canvas_toolbar.dart';
 import 'widgets/drawing_canvas.dart';
+import 'widgets/practice_settings_modal.dart';
 import 'widgets/results_dashboard.dart';
 import 'widgets/target_sentence_card.dart';
 import 'services/prompt_generator_service.dart';
@@ -72,8 +77,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   late final Animation<double> _canvasAnim;
   late final Animation<double> _bottomAnim;
 
-  // Target sentence state
+  // Target sentence & adaptive practice settings state
   String _targetSentence = 'The quick brown fox jumps over the lazy dog';
+  PracticeSettings _practiceSettings = PracticeSettings.defaultSettings();
+  TargetSentenceModel? _targetSentenceModel;
 
   // Canvas tool states
   Color _selectedInkColor = AppTheme.inkMidnight;
@@ -94,6 +101,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   bool _isEvaluating = false;
   String _evaluationStatusText = '';
   EvaluationResult? _lastResult;
+
+  // Personal reference profile
+  final ProfileStorageService _profileStorage = ProfileStorageService();
+  bool _needsCalibration = false;
 
   @override
   void initState() {
@@ -145,6 +156,19 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
 
   Future<void> _initServices() async {
     DigitalInkService().initialize();
+    // Initialize profile & practice settings storage
+    await _profileStorage.initialize();
+    final loadedSettings = _profileStorage.cachedSettings;
+    final generatedModel = SentenceEngineService.generateSentence(loadedSettings);
+
+    if (mounted) {
+      setState(() {
+        _needsCalibration = !_profileStorage.hasProfile;
+        _practiceSettings = loadedSettings;
+        _targetSentenceModel = generatedModel;
+        _targetSentence = generatedModel.text;
+      });
+    }
   }
 
   @override
@@ -191,6 +215,38 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
       _showResultAboveCanvas = false;
     });
     _canvasKey.currentState?.clearCanvas();
+  }
+
+  void _openPracticeSettings() {
+    PracticeSettingsModal.show(
+      context: context,
+      initialSettings: _practiceSettings,
+      onStartPractice: (model) {
+        setState(() {
+          _targetSentenceModel = model;
+          _targetSentence = model.text;
+        });
+        _clearCanvas();
+      },
+      onSaveSettings: (settings) async {
+        setState(() {
+          _practiceSettings = settings;
+        });
+        await _profileStorage.saveSettings(settings);
+      },
+    );
+  }
+
+  void _regenerateTargetSentence() {
+    final model = SentenceEngineService.generateSentence(
+      _practiceSettings,
+      currentText: _targetSentence,
+    );
+    setState(() {
+      _targetSentenceModel = model;
+      _targetSentence = model.text;
+    });
+    _clearCanvas();
   }
 
   Future<void> _submitAndAnalyze() async {
@@ -266,15 +322,16 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
       );
 
       setState(() {
-        _evaluationStatusText = 'Evaluating holistic aesthetic & neatness metrics...';
+        _evaluationStatusText = 'Evaluating aesthetics with RapidWrite 5-Stage Algorithm...';
       });
 
-      final aestheticEvaluation = await VisionAiService().evaluate(
-        strokes: _currentStrokes,
-        imageBytes: capturedImageBytes,
+      final aestheticEvaluation = AestheticEvaluatorService.evaluate(
+        _currentStrokes,
         targetSentence: _targetSentence,
-        ocrRecognizedText: recognizedText,
-        metrics: metrics,
+        referenceProfile: _profileStorage.cachedProfile,
+        ageCohort: _practiceSettings.difficulty == PracticeDifficulty.beginner
+            ? 'School Students Cohort (Elementary / Middle School)'
+            : 'Senior / College Cohort',
       );
 
       final evaluationResult = EvaluationResult(
@@ -286,10 +343,16 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
         aesthetic: aestheticEvaluation,
         screenshotPath: savedImagePath,
         timestamp: DateTime.now(),
+        strokes: List<HandwritingStroke>.from(_currentStrokes),
         ocrEngine: DigitalInkService().lastUsedEngine,
+        targetWpm: _targetSentenceModel?.targetWpm ?? _practiceSettings.targetWpm,
+        recommendedDurationSec: _targetSentenceModel?.recommendedDurationSec,
       );
 
       if (!mounted) return;
+
+      // Record session in history
+      unawaited(_profileStorage.recordSession(evaluationResult));
 
       setState(() {
         _isEvaluating = false;
@@ -330,8 +393,8 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   }
 
   void _showSettingsDialog() {
-    final keyController =
-        TextEditingController(text: VisionAiService().apiKey ?? '');
+    final cachedProfile = _profileStorage.cachedProfile;
+    final isSchool = _practiceSettings.difficulty == PracticeDifficulty.beginner;
 
     showDialog(
       context: context,
@@ -353,65 +416,127 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.tune, color: Colors.white, size: 18),
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 12),
-            const Text(
-              'Evaluation Engine Settings',
-              style: TextStyle(color: Colors.white, fontSize: 16),
+            const Expanded(
+              child: Text(
+                '5-Stage Aesthetic Engine',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Aesthetic Evaluation Mode',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'The app automatically runs a high-fidelity local computer-vision heuristic engine offline. You can also provide an optional Google Gemini API key to run multimodal vision evaluation on canvas screenshots.',
-              style: TextStyle(color: Colors.white60, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: keyController,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Google Gemini API Key (Optional)',
-                labelStyle: const TextStyle(color: Colors.white70),
-                hintText: 'AIzaSy...',
-                hintStyle: const TextStyle(color: Colors.white30),
-                filled: true,
-                fillColor: AppTheme.bgDark,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppTheme.borderDark),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppTheme.borderDark),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.primary),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified, color: AppTheme.secondary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Official Evaluation Engine Active',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          Text(
+                            'Cohort: ${isSchool ? "Elementary / Middle (Unlined Adaptive)" : "Senior / College (Standard Lined)"}',
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 14),
+              const Text(
+                'Five Mandatory Evaluation Stages:',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '1. Repeated letters & common stroke pattern identification\n'
+                '2. Geometric feature extraction (height, width, slant moments, baseline drift)\n'
+                '3. Personal reference profile construction (Median + MAD)\n'
+                '4. Deviation analysis (|Z| <= 1.5 natural style tolerance)\n'
+                '5. Multi-dimensional consistency scoring (7 dimensions)',
+                style: TextStyle(color: Colors.white60, fontSize: 11, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.white12),
+              const SizedBox(height: 10),
+              const Text(
+                'Personal Handwriting Calibration Profile',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              if (cachedProfile != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.bgDark,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.success.withOpacity(0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.check_circle, color: AppTheme.success, size: 16),
+                          SizedBox(width: 6),
+                          Text('Personal Baseline Calibrated', style: TextStyle(color: AppTheme.success, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Style: ${cachedProfile.personalStyleTags.join(" • ")}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await _profileStorage.clearProfile();
+                    if (!mounted) return;
+                    setState(() {});
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Personal reference profile reset.')),
+                    );
+                  },
+                  icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+                  label: const Text('Reset to Population Baseline', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  'No individual baseline recorded yet. The app currently scores against validated cohort baselines. Submit a normal handwriting sample to establish your personal reference profile.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-          ),
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -422,18 +547,8 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
               borderRadius: BorderRadius.circular(10),
             ),
             child: TextButton(
-              onPressed: () {
-                VisionAiService().setApiKey(keyController.text.trim());
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Settings saved successfully'),
-                    backgroundColor: AppTheme.success,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                );
-              },
-              child: const Text('Save', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -448,6 +563,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
     final canUndo = isCanvasKeyReady?.canUndo ?? false;
     final canRedo = isCanvasKeyReady?.canRedo ?? false;
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalPad = screenWidth < 600 ? 10.0 : (screenWidth < 1024 ? 16.0 : 22.0);
+    final verticalPad = screenWidth < 600 ? 8.0 : 12.0;
+
     return Scaffold(
       backgroundColor: AppTheme.bgDark,
       body: Container(
@@ -460,7 +579,7 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: verticalPad),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -491,9 +610,17 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
                       targetSentence: _targetSentence,
                       hasStartedWriting: _hasStartedWriting,
                       activeStrokeCount: _currentStrokes.length,
+                      sentenceModel: _targetSentenceModel,
+                      settings: _practiceSettings,
+                      onOpenSettings: _openPracticeSettings,
+                      onRegenerate: _regenerateTargetSentence,
                       onSentenceChanged: (newSentence) {
                         setState(() {
                           _targetSentence = newSentence;
+                          _targetSentenceModel = TargetSentenceModel.fromText(
+                            text: newSentence,
+                            settings: _practiceSettings,
+                          );
                         });
                         _clearCanvas();
                       },
@@ -512,7 +639,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
                 ],
 
                 // ─── ACTION BAR (CLEAR & SUBMIT & ANALYZE ABOVE CANVAS) ─────
-                _buildActionControlsAboveCanvas(liveDurationSec),
+                FadeTransition(
+                  opacity: _bottomAnim,
+                  child: _buildActionControlsAboveCanvas(liveDurationSec),
+                ),
                 const SizedBox(height: 8),
 
                 SlideTransition(
@@ -559,6 +689,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
                   _buildEvaluatingBanner(),
                   const SizedBox(height: 10),
                 ],
+                if (_needsCalibration && !_isEvaluating) ...[
+                  _buildCalibrationBanner(),
+                  const SizedBox(height: 10),
+                ],
 
                 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                 // DRAWING CANVAS
@@ -591,124 +725,134 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   }
 
   Widget _buildTopBar(String liveDurationSec) {
-    return Row(
-      children: [
-        // App logo pill
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.primary, AppTheme.accentPink],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withOpacity(0.4),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-              SizedBox(width: 6),
-              Text(
-                'RAPID WRITE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                'Stylus Handwriting Evaluator',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 0.2,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                'Tablet-optimized calligraphy & kinematics assessment',
-                style: TextStyle(fontSize: 11, color: Colors.white38),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 640;
 
-        // Live Timer
-        AnimatedBuilder(
-          animation: _pulseAnim,
-          builder: (context, _) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppTheme.cardDark,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _hasStartedWriting
-                    ? AppTheme.secondary.withOpacity(0.5)
-                    : AppTheme.borderDark.withOpacity(0.4),
-              ),
-              boxShadow: _hasStartedWriting
-                  ? [
-                      BoxShadow(
-                        color: AppTheme.secondary.withOpacity(0.15 * _pulseAnim.value),
-                        blurRadius: 14,
-                        spreadRadius: -2,
-                      )
-                    ]
-                  : [],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.timer_outlined,
-                  size: 15,
-                  color: _hasStartedWriting
-                      ? AppTheme.secondary
-                      : Colors.white30,
+        return Row(
+          children: [
+            // App logo pill
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: isCompact ? 8 : 12, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.primary, AppTheme.accentPink],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  _hasStartedWriting ? '${liveDurationSec}s' : '0.0s',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: _hasStartedWriting ? Colors.white : Colors.white38,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.4),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
                   ),
-                ),
-              ],
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'RAPID WRITE',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-        const SizedBox(width: 8),
+            const SizedBox(width: 10),
 
-        // Settings button
-        IconButton(
-          onPressed: _showSettingsDialog,
-          icon: const Icon(Icons.settings_outlined, color: Colors.white54),
-          tooltip: 'Settings & AI Key',
-        ),
-      ],
+            if (!isCompact) ...[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Stylus Handwriting Evaluator',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 0.2,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Adaptive speed calibration & aesthetic assessment',
+                      style: TextStyle(fontSize: 11, color: Colors.white38),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+            ] else
+              const Spacer(),
+
+            // Live Timer Pill
+            AnimatedBuilder(
+              animation: _pulseAnim,
+              builder: (context, _) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardDark,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _hasStartedWriting
+                        ? AppTheme.secondary.withValues(alpha: 0.6)
+                        : AppTheme.borderDark.withValues(alpha: 0.4),
+                  ),
+                  boxShadow: _hasStartedWriting
+                      ? [
+                          BoxShadow(
+                            color: AppTheme.secondary.withValues(alpha: 0.15 * _pulseAnim.value),
+                            blurRadius: 14,
+                            spreadRadius: -2,
+                          )
+                        ]
+                      : [],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.timer_outlined,
+                      size: 14,
+                      color: _hasStartedWriting ? AppTheme.secondary : Colors.white30,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _hasStartedWriting ? '${liveDurationSec}s' : '0.0s',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: _hasStartedWriting ? Colors.white : Colors.white38,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+
+            // About Aesthetic Engine info button
+            IconButton(
+              onPressed: _showSettingsDialog,
+              icon: const Icon(Icons.info_outline_rounded, color: Colors.white54, size: 20),
+              tooltip: 'About 5-Stage Aesthetic Engine',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1003,6 +1147,10 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
   }
 
   Widget _buildActionControlsAboveCanvas(String liveDurationSec) {
+    final double? recSec = _targetSentenceModel?.recommendedDurationSec;
+    final double currentSec = _liveElapsedMs / 1000.0;
+    final bool isOverTime = recSec != null && currentSec > recSec;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1012,7 +1160,7 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
             onTap: _currentStrokes.isNotEmpty ? _clearCanvas : null,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: _currentStrokes.isNotEmpty
                     ? const Color(0xFFEF4444).withValues(alpha: 0.15)
@@ -1035,7 +1183,7 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    'Clear Canvas',
+                    'Clear',
                     style: TextStyle(
                       color: _currentStrokes.isNotEmpty ? Colors.white : Colors.white30,
                       fontSize: 12,
@@ -1048,30 +1196,40 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
           ),
           const SizedBox(width: 8),
 
-          // Active Strokes & Live Timer Pill
+          // Adaptive Timer & Pacing Pill
           if (_hasStartedWriting) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
+                color: isOverTime
+                    ? const Color(0xFF451A03)
+                    : const Color(0xFF0F2D14),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF334155)),
+                border: Border.all(
+                  color: isOverTime
+                      ? const Color(0xFFF59E0B)
+                      : const Color(0xFF22C55E),
+                  width: 1.0,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFFFF6B00),
-                    ),
+                  Icon(
+                    Icons.speed_rounded,
+                    size: 13,
+                    color: isOverTime ? const Color(0xFFFBBF24) : const Color(0xFF4ADE80),
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    '${_currentStrokes.length} strokes  •  ${liveDurationSec}s',
-                    style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+                    recSec != null
+                        ? '${liveDurationSec}s / ${recSec.round()}s target'
+                        : '${liveDurationSec}s (${_currentStrokes.length} strokes)',
+                    style: TextStyle(
+                      color: isOverTime ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -1173,6 +1331,80 @@ class _HandwritingEvaluatorScreenState extends State<HandwritingEvaluatorScreen>
       ),
     );
   }
+  /// Calibration banner — shown to first-time users who have no reference profile
+  Widget _buildCalibrationBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F2D14),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4ADE80).withOpacity(0.5), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.fingerprint_rounded, color: Color(0xFF4ADE80), size: 20),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Write a sample sentence below, then tap "Set as My Baseline" to personalize your scores.',
+              style: TextStyle(color: Color(0xFF86EFAC), fontSize: 11.5),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _hasStartedWriting ? _saveAsBaseline : null,
+            child: AnimatedOpacity(
+              opacity: _hasStartedWriting ? 1.0 : 0.4,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF16A34A),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Set as My Baseline',
+                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => setState(() => _needsCalibration = false),
+            child: const Icon(Icons.close_rounded, color: Color(0xFF4ADE80), size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Saves current canvas strokes as the user's personal handwriting baseline.
+  Future<void> _saveAsBaseline() async {
+    if (_currentStrokes.isEmpty) return;
+    try {
+      // Use AestheticEvaluatorService to build the reference profile (synchronous)
+      final profile = AestheticEvaluatorService.calibrateBaseline(
+        strokes: _currentStrokes,
+        targetSentence: _targetSentence,
+      );
+      await _profileStorage.saveProfile(profile);
+      if (mounted) {
+        setState(() => _needsCalibration = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✓ Your handwriting baseline has been saved! Future scores will be personalised.'),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Calibration] Error saving baseline: $e');
+    }
+  }
+
 Widget _buildEvaluatingBanner() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),

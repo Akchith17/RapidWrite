@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/evaluation_result.dart';
+import 'aesthetic_breakdown_viewer.dart';
+import 'algorithm_inspection_modal.dart';
 
 /// Clean, compact handwriting evaluation dashboard in a radiant Orange & White theme,
 /// focusing on the core essential metrics without screen-overwhelming clutter.
@@ -100,21 +102,35 @@ Written: "${result.recognizedText}"
                   _buildHeroCards(context),
                   const SizedBox(height: 14),
 
+                  // 1.5 Target Speed Benchmark Comparison (Target WPM vs Actual)
+                  if (result.targetWpm != null) ...[
+                    _buildSpeedBenchmarkCard(),
+                    const SizedBox(height: 14),
+                  ],
+
                   // 2. Clean Target vs Written Text Comparison Card
                   _buildOcrComparisonCard(),
                   const SizedBox(height: 14),
 
-                  // 3. Calligraphy Geometry Indicators (Baseline, Slant, Smoothness)
-                  _buildGeometryBars(),
+                  // 3. Full 7-Dimension Aesthetic Breakdown
+                  _buildAestheticBreakdown(context),
                   const SizedBox(height: 14),
 
-                  // 4. Personalized Coaching Tip
+                  // 4. Personal Style Tags & Shift Observations (if available)
+                  if (result.aesthetic.hasPersonalReference ||
+                      result.aesthetic.personalStyleTags.isNotEmpty ||
+                      result.aesthetic.styleShiftObservations.isNotEmpty) ...[
+                    _buildPersonalReferenceCard(),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // 5. Personalized Coaching Tips
                   if (result.aesthetic.coachingTips.isNotEmpty)
                     _buildCoachingTipCard(),
 
                   const SizedBox(height: 18),
 
-                  // 5. Action Buttons (Practice Next / Close)
+                  // 6. Action Buttons (Practice Next / Close)
                   _buildActionButtons(context),
                   const SizedBox(height: 8),
                 ],
@@ -187,6 +203,38 @@ Written: "${result.recognizedText}"
               // Action Buttons
               Row(
                 children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    child: Material(
+                      color: orangePrimary.withValues(alpha: 0.12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: BorderSide(color: orangePrimary.withValues(alpha: 0.4)),
+                      ),
+                      child: InkWell(
+                        onTap: () => AestheticBreakdownViewer.show(context, result),
+                        borderRadius: BorderRadius.circular(20),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.analytics_rounded, size: 14, color: orangePrimary),
+                              SizedBox(width: 4),
+                              Text(
+                                'View Breakdown',
+                                style: TextStyle(
+                                  color: orangeDark,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.share_outlined, color: orangePrimary, size: 20),
                     tooltip: 'Share Report',
@@ -235,8 +283,9 @@ Written: "${result.recognizedText}"
           title: 'AESTHETIC',
           value: result.aesthetic.overallAestheticScore.toStringAsFixed(0),
           unit: '/ 100',
-          subtitle: 'Grade ${result.aesthetic.grade} • Neatness ${result.aesthetic.neatnessScore.toStringAsFixed(0)}%',
+          subtitle: 'Grade ${result.aesthetic.grade} • Tap for Visual Breakdown',
           isHighlighted: false,
+          onTap: () => AestheticBreakdownViewer.show(context, result),
         );
 
         if (isSmall) {
@@ -261,6 +310,131 @@ Written: "${result.recognizedText}"
           ],
         );
       },
+    );
+  }
+
+  /// Target Speed Benchmark Card comparing target WPM against student's actual net WPM
+  Widget _buildSpeedBenchmarkCard() {
+    if (result.targetWpm == null) return const SizedBox.shrink();
+    final targetWpm = result.targetWpm!;
+    final actualWpm = result.netWpm;
+    final deltaWpm = actualWpm - targetWpm;
+    final isAhead = deltaWpm >= 0;
+    final activeSec = result.metrics.activeDrawingTimeMs / 1000.0;
+    final recSec = result.recommendedDurationSec;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: orangeBorder, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: orangePrimary.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.speed_rounded, color: orangePrimary, size: 16),
+              const SizedBox(width: 6),
+              const Text(
+                'TARGET SPEED BENCHMARK',
+                style: TextStyle(
+                  color: orangeDark,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isAhead ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isAhead ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isAhead ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                      size: 11,
+                      color: isAhead ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      isAhead
+                          ? '+${deltaWpm.toStringAsFixed(1)} WPM ahead'
+                          : '${deltaWpm.abs().toStringAsFixed(1)} WPM below target',
+                      style: TextStyle(
+                        color: isAhead ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            alignment: WrapAlignment.spaceAround,
+            children: [
+              _buildBenchmarkItem('Target WPM', '$targetWpm WPM', Icons.flag_outlined),
+              _buildBenchmarkItem('Actual Net Speed', '${actualWpm.toStringAsFixed(1)} WPM', Icons.speed_rounded),
+              if (recSec != null)
+                _buildBenchmarkItem(
+                  'Recommended Time',
+                  '${recSec.round()}s',
+                  Icons.hourglass_top_rounded,
+                ),
+              _buildBenchmarkItem(
+                'Actual Time',
+                '${activeSec.toStringAsFixed(1)}s',
+                Icons.timer_rounded,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBenchmarkItem(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: orangeBgSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: orangePrimary),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: const TextStyle(color: textMuted, fontSize: 9.5, fontWeight: FontWeight.w600)),
+              Text(value, style: const TextStyle(color: textDark, fontSize: 12, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -359,7 +533,9 @@ Written: "${result.recognizedText}"
     );
   }
 
-  Widget _buildGeometryBars() {
+  /// Full 7-dimension aesthetic breakdown replacing the old 3-bar section.
+  Widget _buildAestheticBreakdown(BuildContext context) {
+    final a = result.aesthetic;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -370,37 +546,234 @@ Written: "${result.recognizedText}"
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'CALLIGRAPHY & NEATNESS BREAKDOWN',
-            style: TextStyle(
-              color: textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.8,
-            ),
+          Row(
+            children: [
+              const Text(
+                'AESTHETIC BREAKDOWN',
+                style: TextStyle(
+                  color: textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const Spacer(),
+              if (a.hasPersonalReference)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF4ADE80), width: 1),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.person_rounded, color: Color(0xFF16A34A), size: 11),
+                      SizedBox(width: 3),
+                      Text(
+                        'Personalised',
+                        style: TextStyle(color: Color(0xFF16A34A), fontSize: 10, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'General Assessment',
+                    style: TextStyle(color: textMuted, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
-          _ProgressBarRow(
-            label: 'Baseline Straightness',
-            score: result.aesthetic.baselineAlignmentScore,
+          _ProgressBarRow(label: 'Readability', score: a.readabilityScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Letter Formation', score: a.letterFormationScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Spacing', score: a.spacingScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Alignment & Baseline', score: a.alignmentScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Consistency', score: a.consistencyScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Visual Organisation', score: a.visualOrganizationScore),
+          const SizedBox(height: 10),
+          _ProgressBarRow(label: 'Stroke Smoothness', score: a.strokeSmoothnessScore),
+          const SizedBox(height: 16),
+
+          // Primary Visual Aesthetic Breakdown Button
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => AestheticBreakdownViewer.show(context, result),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [orangePrimary, orangeDark],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: orangePrimary.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.draw_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Aesthetic Breakdown (Visual Letter, Slant & Spacing Analysis)',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
+                  ],
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 10),
-          _ProgressBarRow(
-            label: 'Slant Angle Consistency',
-            score: result.aesthetic.slantConsistencyScore,
-          ),
-          const SizedBox(height: 10),
-          _ProgressBarRow(
-            label: 'Stroke Smoothness & Curvature',
-            score: result.aesthetic.strokeSmoothnessScore,
+
+          // Secondary Inspection Button
+          InkWell(
+            onTap: () => AlgorithmInspectionModal.show(context, a),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: orangeBgSoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: orangeBorder, width: 1.0),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.calculate_outlined, color: orangePrimary, size: 15),
+                  SizedBox(width: 6),
+                  Text(
+                    'Inspect Mathematical Formula & Algorithm Profile',
+                    style: TextStyle(
+                      color: orangeDark,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
+  /// Personal style tags and shift observations card.
+  Widget _buildPersonalReferenceCard() {
+    final a = result.aesthetic;
+    final hasTags = a.personalStyleTags.isNotEmpty;
+    final hasShifts = a.styleShiftObservations.isNotEmpty;
+    if (!hasTags && !hasShifts) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: orangeBorder, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasTags) ...[
+            const Text(
+              'YOUR WRITING STYLE',
+              style: TextStyle(
+                color: orangeDark,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.7,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: a.personalStyleTags.map((tag) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: orangePrimary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: orangeBorder),
+                ),
+                child: Text(tag, style: const TextStyle(color: orangeDark, fontSize: 11, fontWeight: FontWeight.w600)),
+              )).toList(),
+            ),
+          ],
+          if (hasTags && hasShifts) const SizedBox(height: 10),
+          if (hasShifts) ...[
+            const Text(
+              'SESSION OBSERVATIONS',
+              style: TextStyle(
+                color: orangeDark,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.7,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...a.styleShiftObservations.map((obs) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.arrow_right_rounded, color: orangePrimary, size: 16),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(obs, style: const TextStyle(color: textDark, fontSize: 11.5))),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildCoachingTipCard() {
-    final tip = result.aesthetic.coachingTips.first;
+    final tip = result.aesthetic.coachingTips.isNotEmpty
+        ? result.aesthetic.coachingTips.first
+        : 'Maintain steady stroke rhythm and relaxed grip.';
+
+    String? pacingTip;
+    if (result.targetWpm != null) {
+      final target = result.targetWpm!;
+      final actual = result.netWpm;
+      if (actual > target * 1.25 && result.characterAccuracy < 88.0) {
+        pacingTip = 'You reached ${actual.toStringAsFixed(1)} WPM (target was $target WPM), but accuracy dropped. Slow down slightly to steady your letter formation.';
+      } else if (actual < target * 0.75 && result.characterAccuracy >= 94.0) {
+        pacingTip = 'Your accuracy is superb (${result.characterAccuracy.toStringAsFixed(0)}%). With this solid control, gently increase writing cadence toward your $target WPM target.';
+      } else if ((actual - target).abs() <= target * 0.20) {
+        pacingTip = 'Splendid pacing! Your speed (${actual.toStringAsFixed(1)} WPM) closely aligns with your $target WPM target.';
+      }
+    }
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -414,26 +787,38 @@ Written: "${result.recognizedText}"
           bottom: BorderSide(color: orangeBorder, width: 0.8),
         ),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lightbulb_outline_rounded, color: orangePrimary, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Coaching Tip',
-                  style: TextStyle(color: orangeDark, fontSize: 12, fontWeight: FontWeight.bold),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.lightbulb_outline_rounded, color: orangePrimary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Personalized Coaching & Pacing Tip',
+                      style: TextStyle(color: orangeDark, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      tip,
+                      style: const TextStyle(color: textDark, fontSize: 13, height: 1.3),
+                    ),
+                    if (pacingTip != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        pacingTip,
+                        style: const TextStyle(color: orangeDark, fontSize: 12, fontStyle: FontStyle.italic, height: 1.3),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  tip,
-                  style: const TextStyle(color: textDark, fontSize: 13, height: 1.3),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -494,6 +879,7 @@ class _MetricBox extends StatelessWidget {
   final String unit;
   final String subtitle;
   final bool isHighlighted;
+  final VoidCallback? onTap;
 
   const _MetricBox({
     required this.icon,
@@ -502,11 +888,12 @@ class _MetricBox extends StatelessWidget {
     required this.unit,
     required this.subtitle,
     required this.isHighlighted,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final box = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isHighlighted ? ResultsDashboard.orangeBgSoft : Colors.white,
@@ -585,6 +972,18 @@ class _MetricBox extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap != null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: box,
+        ),
+      );
+    }
+    return box;
   }
 }
 

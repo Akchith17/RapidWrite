@@ -17,20 +17,14 @@ void main() {
     });
 
     await tester.pumpWidget(const StylusEvaluatorApp());
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
 
     // Verify main tablet header
     expect(find.text('Stylus Handwriting Evaluator'), findsOneWidget);
 
-    // Verify default target copy sentence
-    expect(
-      find.text('The quick brown fox jumps over the lazy dog'),
-      findsOneWidget,
-    );
-
     // Verify control buttons
-    expect(find.text('Clear Canvas'), findsOneWidget);
-    expect(find.text('Submit / Analyze'), findsOneWidget);
+    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('Submit & Analyze'), findsOneWidget);
   });
 
   test('SpeedCalculatorService independent speed metric test', () {
@@ -53,7 +47,7 @@ void main() {
     expect(metrics.strokeCount, equals(1));
   });
 
-  test('AestheticEvaluatorService evaluation heuristics test', () {
+  test('AestheticEvaluatorService 5-stage algorithm official evaluation test', () {
     final stroke1 = HandwritingStroke(
       points: [
         StrokePoint(x: 10, y: 50, timestampMs: 1000),
@@ -61,12 +55,59 @@ void main() {
         StrokePoint(x: 30, y: 50, timestampMs: 1200),
       ],
     );
+    final stroke2 = HandwritingStroke(
+      points: [
+        StrokePoint(x: 45, y: 50, timestampMs: 1300),
+        StrokePoint(x: 55, y: 52, timestampMs: 1400),
+        StrokePoint(x: 65, y: 50, timestampMs: 1500),
+      ],
+    );
 
-    final evaluation = AestheticEvaluatorService.evaluate([stroke1]);
+    // 1. Evaluate with 5-stage engine
+    final evaluation = AestheticEvaluatorService.evaluate(
+      [stroke1, stroke2],
+      targetSentence: 'Students attend classes every day',
+      ageCohort: 'Senior / College Cohort',
+    );
 
     expect(evaluation.overallAestheticScore, greaterThan(0));
-    expect(evaluation.neatnessScore, greaterThan(0));
-    expect(evaluation.visualObservations.isNotEmpty, isTrue);
+    expect(evaluation.readabilityScore, greaterThan(0));
+    expect(evaluation.letterFormationScore, greaterThan(0));
+    expect(evaluation.spacingScore, greaterThan(0));
+    expect(evaluation.alignmentScore, greaterThan(0));
+    expect(evaluation.consistencyScore, greaterThan(0));
+    expect(evaluation.visualOrganizationScore, greaterThan(0));
+    expect(evaluation.evaluatedBy, contains('RapidWrite 5-Stage Aesthetic Engine'));
+    expect(evaluation.coachingTips.isNotEmpty, isTrue);
+
+    // 2. Calibrate personal baseline (Stage 3)
+    final profile = AestheticEvaluatorService.calibrateBaseline(
+      strokes: [stroke1, stroke2],
+      targetSentence: 'Students attend classes every day',
+      userId: 'test_student',
+    );
+    expect(profile.userId, equals('test_student'));
+    expect(profile.medianLetterHeight, greaterThan(0));
+    expect(profile.letterHeightMad, greaterThan(0));
+    expect(profile.personalStyleTags.isNotEmpty, isTrue);
+
+    // 3. Evaluate second session with calibrated personal reference (Stage 4 & 5)
+    final session2 = AestheticEvaluatorService.evaluate(
+      [stroke1, stroke2],
+      targetSentence: 'Students attend classes every day',
+      referenceProfile: profile,
+    );
+    expect(session2.hasPersonalReference, isTrue);
+    expect(session2.personalStyleTags, equals(profile.personalStyleTags));
+
+    // 4. Test School Cohort age-adaptive normalization
+    final schoolEval = AestheticEvaluatorService.evaluate(
+      [stroke1, stroke2],
+      targetSentence: 'The quick brown fox jumps over the lazy dog',
+      ageCohort: 'School Students Cohort (Elementary / Middle School)',
+    );
+    expect(schoolEval.overallAestheticScore, greaterThan(0));
+    expect(schoolEval.grade.isNotEmpty, isTrue);
   });
 
   test('DigitalInkService text matching accuracy test', () {

@@ -1,8 +1,102 @@
-# Miscellaneous
-*.class
+# ==============================================================================
+# RAPIDWRITE - PRODUCTION .GITIGNORE CONFIGURATION
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment & Secrets (Confidential - Never Commit)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# ------------------------------------------------------------------------------
+# 2. Private Student Handwriting Datasets & Research PDFs (Confidential)
+# ------------------------------------------------------------------------------
+DataSet for Aesthetic/
+research_working_dir/
+research_output/
+*.pdf
+!RAPID_WRITE_User_Guide.pdf
+
+# ------------------------------------------------------------------------------
+# 3. Dependencies & Package Caches
+# ------------------------------------------------------------------------------
+node_modules/
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/doc/api/
+
+# ------------------------------------------------------------------------------
+# 4. Flutter & Build Artifacts
+# ------------------------------------------------------------------------------
+# Exclude heavy build caches, test caches and compilation dill files
+/build/*
+!/build/web
+*.dill
+*.dill.track.dill
+/coverage/
+
+# Android Studio & Gradle build outputs
+/android/app/debug
+/android/app/profile
+/android/app/release
+.gradle/
+build/
+**/ios/Flutter/.last_build_id
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+.widget_preview/
+
+# ------------------------------------------------------------------------------
+# 5. Local Tunnel Binaries, Ephemeral Logs & Helper Scripts
+# ------------------------------------------------------------------------------
+cloudflared.exe
+*.exe
 *.log
+cloudflared*.log
+latest_tunnel_url.txt
+latest_url.txt
+start_all.js
+
+# ------------------------------------------------------------------------------
+# 6. Ephemeral Local QR Codes & Preview Connection Assets
+# ------------------------------------------------------------------------------
+ipad_live_qr.png
+live_ipad_qr.png
+live_tunnel_qr.svg
+live_wifi_qr.svg
+qr_github.svg
+qr_local.svg
+qr_tunnel.svg
+
+# ------------------------------------------------------------------------------
+# 7. Archives & Compressed Bundles
+# ------------------------------------------------------------------------------
+*.zip
+*.tar
+*.gz
+*.rar
+deploy_to_netlify.zip
+
+# ------------------------------------------------------------------------------
+# 8. Temporary Files & Editor Caches
+# ------------------------------------------------------------------------------
+*.class
 *.pyc
 *.swp
+*~
+*.tmp
+*.bak
+*.cache
 .DS_Store
 .atom/
 .build/
@@ -11,43 +105,10 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
-node_modules/
-cloudflared.exe
-*.exe
-*.zip
 
-# IntelliJ related
+# IntelliJ / IDEs
 *.iml
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
 #.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/*
-!/build/web
-/coverage/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Widget Preview related
-.widget_preview/

@@ -63,4 +63,7 @@ class HandwritingStroke {
 
     return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
+
+  /// Non-null bounding box getter for computer vision and aesthetic analysis.
+  Rect get boundingBox => bounds ?? Rect.zero;
 }
